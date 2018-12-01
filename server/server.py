@@ -18,13 +18,13 @@ OPERATION = "download"
 # 报文数据字段最大长度
 MSS = 1
 # 发送方最大时延
-senderTimeoutValue = 0.5
+senderTimeoutValue = 0.001
 # 接收窗口大小
 rwnd = 0
 # 拥塞窗口大小
 cwnd = MSS
 # 满启动阈值
-ssthresh = 0
+ssthresh = 10
 # 重复ACK计数
 dupACKcount = 0
 
@@ -64,7 +64,7 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
     # 1为指数增长；2为线性增长
     congestionState = 1
     # 是否是拥塞避免
-    congestionCtrl = False
+    # congestionCtrl = False
     global dupACKcount,cwnd,ssthresh
 
     f = open(filename,"rb")
@@ -77,17 +77,13 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
             # 启动计时器
             if base == nextseqnum:
                 GBNtimer = time.time()
-                
+            print("CWND",cwnd)
             # 如果大于窗口长度，cache则满   
-            if sendNotAck >=N or sendNotAck >= rwnd:
+            if sendNotAck >=N or sendNotAck >= rwnd or sendNotAck >= cwnd:
                 sendAvaliable = False
-                congestionCtrl = False
                 # print("Up to limit ",nextseqnum - base,N)
                 # print("最大缓存：",rwnd)
                 # print("Client cache full.")
-            elif sendNotAck >= cwnd:
-                sendAvaliable = False
-                congestionCtrl = True
             else:
                 # 每次报文中数据的字节长度
                 data = f.read(MSS)
@@ -115,27 +111,21 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
                 ack = receiveData["ACK_NUM"]
                 # 接收窗口大小，用于流量控制
                 rwnd = receiveData["recvWindow"]
-                print(ack,base,rwnd)
-
-                if sendNotAck <= rwnd:
-                    congestionCtrl = True
-                else:
-                    congestionCtrl = False
+                # print(nextseqnum,base,rwnd)
 
                 if ack >= base:
                     # 更新base
                     base = ack+1
+                    previousACK = ack
+                    dupACKcount = 1
                     # 更新已发未收到ACK的包的数量
-                    sendNotAck = nextseqnum - base
-                    # 脱离超时循环
-                    receiveACK = True
-                    # 继续发送
-                    sendAvaliable = True
-                    # 更新计时器
-                    GBNtimer = time.time()
+                    # sendNotAck = nextseqnum - base
+                    
                     # 一次RTT完成，未发生拥塞，根据状态增加cwnd
-                    if base == nextseqnum:
+                    if base == nextseqnum:     
                         sendAvaliable =True
+                        # 脱离超时循环
+                        receiveACK = True
                         # 乘性增长
                         if congestionState == 1:
                             cwnd *= 2
@@ -159,14 +149,11 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
                         # 进入重传
                         raise queue.Empty
                     continue
-                else:
-                    previousACK = ack
-                    dupACKcount = 1
                 
                 # 没收到响应的ack，如冗余的ack，没有更新计时器
                 currentTime = time.time()
                 # 由阻塞控制引起的超时
-                if currentTime - GBNtimer > senderTimeoutValue and congestionCtrl:
+                if currentTime - GBNtimer > senderTimeoutValue:
                     print("Time out and output current sequence number",base)
                     # 重启计时器
                     GBNtimer = time.time()
@@ -188,7 +175,7 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
                         ssthresh = 1
                     cwnd = 1
                 # 由超过接收窗口大小引起的超时
-                elif currentTime - GBNtimer > senderTimeoutValue and not congestionCtrl:
+                elif currentTime - GBNtimer > senderTimeoutValue:
                     # 重启计时器
                     GBNtimer = time.time()
                     # 发送空包等到接收方将更新后的rwnd返回
@@ -197,32 +184,31 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
                     if sendNotAck < rwnd:
                         receiveACK = True
                         sendAvaliable = True
-                        congestionCtrl = True
 
             # 接收端发送的包超时
             except queue.Empty: 
-                if congestionCtrl:
-                    print("Time out and output current sequence number",base)
-                    # 重启计时器
-                    GBNtimer = time.time()
-                    baseRepeat = base
-                    ForceTime += 1
-                    if ForceTime > 3:
-                        ForceTime = 0
-                        baseRepeat -= 10
-                        if baseRepeat<0:
-                            baseRepeat = 0
-                    # 重传
-                    for i in range(baseRepeat,nextseqnum):
-                        packet = cache[i]
-                        send_sock.sendto(cache[i],cli_addr)
-                        print("Check resend packet SEQ:",bits2dict(packet)["SEQ_NUM"])
-                    congestionState = 1
-                    ssthresh = int(cwnd)/2
-                    if ssthresh<=0:
-                        ssthresh = 1
-                    cwnd = 1
-                else:    
+                # if congestionCtrl:
+                #     print("Time out and output current sequence number",base)
+                #     # 重启计时器
+                #     GBNtimer = time.time()
+                #     baseRepeat = base
+                #     ForceTime += 1
+                #     if ForceTime > 3:
+                #         ForceTime = 0
+                #         baseRepeat -= 10
+                #         if baseRepeat<0:
+                #             baseRepeat = 0
+                #     # 重传
+                #     for i in range(baseRepeat,nextseqnum):
+                #         packet = cache[i]
+                #         send_sock.sendto(cache[i],cli_addr)
+                #         print("Check resend packet SEQ:",bits2dict(packet)["SEQ_NUM"])
+                #     congestionState = 1
+                #     ssthresh = int(cwnd)/2
+                #     if ssthresh<=0:
+                #         ssthresh = 1
+                #     cwnd = 1
+                # else:    
                     print("Update flow control value.")
                     GBNtimer = time.time()
                     # 发送空包等到接收方将更新后的rwnd返回
