@@ -54,22 +54,13 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
     while sendContinue:
         # 可以发送数据
         while sendAvaliable:
-
-            # 每次报文中数据的字节长度
-            data = f.read(1)
-            # 文件读入完毕
-            if data == b'':
-                print("File read end.")
-                sendAvaliable = False
-                sendContinue = False
+            
+            # 已发没收到ACK的包
+            sendNotAck = nextseqnum - base
             # 启动计时器
             if base == nextseqnum:
                 GBNtimer = time.time()
-            # 发送缓存(base,base+N),用于重传 
-
-            # 已发没收到ACK的包
-            sendNotAck = nextseqnum - base
-            
+                
             # 如果大于窗口长度，cache则满   
             if sendNotAck >=N or sendNotAck >= rwnd:
                 sendAvaliable = False
@@ -77,9 +68,19 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
                 # print("最大缓存：",rwnd)
                 # print("Client cache full.")
             else:
+                # 每次报文中数据的字节长度
+                data = f.read(1)
+                # 文件读入完毕
+                if data == b'':
+                    print("File read end.")
+                    sendAvaliable = False
+                    sendContinue = False
+                # 发送缓存(base,base+N),用于重传 
                 cache[nextseqnum] = dict2bits({"SEQ_NUM":nextseqnum,"DATA":data})
                 send_sock.sendto(cache[nextseqnum],cli_addr)
                 nextseqnum += 1
+       
+       
 
         # 等待接收ACK
         receiveACK = False

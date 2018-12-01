@@ -84,7 +84,8 @@ def fileReceiver(port,ser_recv_addr,filename):
             # 更新确认序号
             LastByteRcvd = packet["SEQ_NUM"]
             d.append(packet)
-
+            print(packet["DATA"])
+            
             total_length += len(packet["DATA"])
             print(RcvBuffer - (LastByteRcvd-LastByteRead))
             recv_sock.sendto(dict2bits({"ACK_NUM":expectedSeqValue,"ACK":b'1',"recvWindow":RcvBuffer - (LastByteRcvd-LastByteRead)}),ser_recv_addr)
