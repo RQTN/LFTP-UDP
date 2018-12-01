@@ -1,5 +1,7 @@
 from socket import *
 from time import ctime
+import sys
+sys.path.append('../')
 from utility import *
 import json
 import queue
@@ -14,8 +16,10 @@ APP_PORT = 20000
 OPERATION = "download"
 
 senderTimeoutValue = 0.5
+rwnd = 0
 
 def TransferReceiver(port,receiveQueue):
+    global rwnd
     receiverSocket = socket(AF_INET,SOCK_DGRAM)
     receiverSocket.bind(('',port))
     while True:
@@ -24,12 +28,13 @@ def TransferReceiver(port,receiveQueue):
         packet = bits2dict(data)
         receiveQueue.put(packet)
         print("receiver receive ack:",packet["ACK_NUM"])
+        # print("receiver window size:",packet["recvWindow"])
 
     receiverSocket.close()
     print("receiver close")
 
 def TransferSender(port,receiveQueue,filename,cli_addr):
-
+    global rwnd
     send_sock = socket(AF_INET,SOCK_DGRAM)
     send_sock.bind(('',port))
     print(cli_addr)
@@ -47,7 +52,8 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
     sendAvaliable = True
     f = open(filename,"rb")
     while sendContinue:
-        while sendAvaliable:#如果可以读入数据
+        # 可以发送数据
+        while sendAvaliable:
 
             # 每次报文中数据的字节长度
             data = f.read(1)
@@ -60,53 +66,67 @@ def TransferSender(port,receiveQueue,filename,cli_addr):
             if base == nextseqnum:
                 GBNtimer = time.time()
             # 发送缓存(base,base+N),用于重传 
-            cache[nextseqnum] = dict2bits({"SEQ_NUM":nextseqnum,"DATA":data})
-            send_sock.sendto(cache[nextseqnum],cli_addr)
-            nextseqnum += 1
+
             # 已发没收到ACK的包
             sendNotAck = nextseqnum - base
-
+            
             # 如果大于窗口长度，cache则满   
-            if sendNotAck >=N:
+            if sendNotAck >=N or sendNotAck >= rwnd:
                 sendAvaliable = False
                 # print("Up to limit ",nextseqnum - base,N)
-            
-
+                # print("最大缓存：",rwnd)
+                # print("Client cache full.")
+            else:
+                cache[nextseqnum] = dict2bits({"SEQ_NUM":nextseqnum,"DATA":data})
+                send_sock.sendto(cache[nextseqnum],cli_addr)
+                nextseqnum += 1
 
         # 等待接收ACK
         receiveACK = False
         while not receiveACK:
-            # 发送端接收端口收到的队列
-            receiveData = receiveQueue.get(timeout = senderTimeoutValue)
-            # ack序号
-            ack = receiveData["ACK_NUM"]
-            # 接收窗口大小，用于流量控制
-            rwnd = receiveData["recvWindow"]
+            try:
+                # 发送端接收端口收到的队列
+                receiveData = receiveQueue.get(timeout = senderTimeoutValue)
+                # ack序号
+                ack = receiveData["ACK_NUM"]
+                # 接收窗口大小，用于流量控制
+                rwnd = receiveData["recvWindow"]
+                print(ack,base,rwnd)
 
-            if ack >= base:
-                # 更新base
-                base = ack+1
-                # 更新已发未收到ACK的包的数量
-                sendNotAck = nextseqnum - base
-                # 脱离超时循环
-                receiveACK = True
-                # 继续发送
-                sendAvaliable = True
-                # 更新计时器
+                if ack >= base:
+                    # 更新base
+                    base = ack+1
+                    # 更新已发未收到ACK的包的数量
+                    sendNotAck = nextseqnum - base
+                    # 脱离超时循环
+                    receiveACK = True
+                    # 继续发送
+                    sendAvaliable = True
+                    # 更新计时器
+                    GBNtimer = time.time()
+                
+                # 没收到响应的ack，如冗余的ack，没有更新计时器
+                currentTime = time.time()
+                # 判断超时
+                if currentTime - GBNtimer > senderTimeoutValue:
+                    print("Time out and output current sequence number",base)
+                    # 更新计时器
+                    GBNtimer = time.time()
+                    # 重传
+                    for i in range(base,nextseqnum):
+                        packet = cache[i]
+                        send_sock.sendto(packet,cli_addr)
+                        print("Check resend packet SEQ:",packet["SEQ_NUM"])
+
+            except queue.Empty: #超时，发包
+                print("Update flow control value.")
                 GBNtimer = time.time()
-            
-            # 没收到响应的ack，如冗余的ack，没有更新计时器
-            currentTime = time.time()
-            # 判断超时
-            if currentTime - GBNtimer > senderTimeoutValue
-                print("Time out and output current sequence number",base)
-                # 更新计时器
-                GBNtimer = time.time()
-                # 重传
-                for i range(base,nextseqnum):
-                    packet = cache[i]
-                    send_sock.sendtp(packet,cli_addr)
-                    print("Check resend packet SEQ:",packet["SEQ_NUM"])
+                # 发送空包等到接收方将更新后的rwnd返回
+                send_sock.sendto(dict2bits({}),cli_addr)
+                sendNotAck = nextseqnum - base - 1
+                if sendNotAck < rwnd:
+                    receiveACK = True
+                    sendAvaliable = True
             
     f.close()
     send_sock.close()
@@ -127,7 +147,8 @@ jsonOptions = json.loads(jsonOptions)
 filename = jsonOptions["filename"]
 # 请求操作
 operation = jsonOptions["operation"]
-print(filename,operation)
+rwnd = packet["recvWindow"]
+print(filename,operation,rwnd)
 # 返回新的可用端口，对于下载请求，即为服务端作为发送方接收的端口，对于上传，即为服务端作为接收方接收和发送的端口
 replyPort = bytes(json.dumps({"appPort":APP_PORT}),encoding = 'utf-8')
 recv_sock.sendto(replyPort,address)
@@ -142,7 +163,7 @@ if operation == "download":
     # 发送方发送文件内容的线程
     # 参数：发送方发送端口，接收方接收端口
     send_thread = threading.Thread(target = TransferSender,args = (APP_PORT+1,transferQueue,filename,(address[0],address[1]),))
-    
+
     APP_PORT += 2
     recv_thread.start()
     send_thread.start()
