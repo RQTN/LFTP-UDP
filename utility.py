@@ -88,10 +88,10 @@ def bits2dict(bitstream):
 
 fileWriterEnd = False
 #磁盘每1s进行一次写操作
-FileWriteInterval = 1
+FileWriteInterval = 0.1
 LastByteRcvd = 0
 LastByteRead = 0
-RcvBuffer = 100
+RcvBuffer = 1000
 
 def fileWriter(filename,d,timeQueue):
     global fileWriterEnd,LastByteRead
@@ -152,7 +152,7 @@ def fileReceiver(port,ser_recv_addr,filename):
             # 更新确认序号
             LastByteRcvd = packet["SEQ_NUM"]
             d.append(packet)
-            print(packet["DATA"])
+            # print(packet["DATA"])
             
             total_length += len(packet["DATA"])
             print(RcvBuffer - (LastByteRcvd-LastByteRead))
@@ -172,7 +172,7 @@ def fileReceiver(port,ser_recv_addr,filename):
 
 
 # 报文数据字段最大长度
-MSS = 1
+MSS = 100
 # 发送方最大时延
 senderTimeoutValue = 0.5
 # 接收窗口大小
@@ -180,7 +180,7 @@ rwnd = 0
 # 拥塞窗口大小
 cwnd = MSS
 # 满启动阈值
-ssthresh = 10
+ssthresh = 100
 # 重复ACK计数
 dupACKcount = 0
    
@@ -274,6 +274,7 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                 rwnd = receiveData["recvWindow"]
                 # print(nextseqnum,base,rwnd)
 
+                print(sendNotAck,rwnd)
                 # if sendNotAck <= rwnd:
                 #     ClientBlock = False
                 # else:
@@ -285,11 +286,13 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                     GBNtimer = time.time()
                     # 更新已发未收到ACK的包的数量
                     sendNotAck = nextseqnum - base
-                    # 脱离超时循环
-                    receiveACK = True
+                    previousACK = ack
+                    dupACKcount = 1
                     # 一次RTT完成，未发生拥塞，根据状态增加cwnd
                     if base == nextseqnum:     
                         sendAvaliable =True
+                        # 脱离超时循环
+                        receiveACK = True
                         # 乘性增长
                         if congestionState == 1:
                             cwnd *= 2
@@ -311,11 +314,9 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                         congestionState = 2
                         print("Three times duplicated ACK",previousACK," ,resend now!")
                         # 进入重传
-                        raise queue.Empty
+                        sendAvaliable = True
+                        receiveACK = True
                     continue
-                else:
-                    previousACK = ack
-                    dupACKcount = 1
                 
                 # 没收到响应的ack，如冗余的ack，没有更新计时器
                 currentTime = time.time()
@@ -358,37 +359,33 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
 
             # 接收端发送的包超时
             except queue.Empty: 
-                if not ClientBlock:
-                    baseRepeat = base
-                    print("Time out and output current sequence number",base)
-                    ForceTime += 1
-                    if ForceTime > 3:
-                        ForceTime = 0
-                        baseRepeat -= 10
-                        if baseRepeat<0:
-                            baseRepeat = 0
-                    GBNtimer = time.time()#更新计时器
-                    for i in range(baseRepeat,nextseqnum):
-                        packet = cache[i]
-                        print("Check resend packet SEQ:",bits2dict(packet)["SEQ_NUM"])
-                        send_sock.sendto(packet,cli_addr)
-                    congestionState = 1
-                    ssthresh = int(cwnd)/2
-                    cwnd = 1
-                else:    
+                # if not ClientBlock:
+                #     baseRepeat = base
+                #     print("Time out and output current sequence number",base)
+                #     ForceTime += 1
+                #     if ForceTime > 3:
+                #         ForceTime = 0
+                #         baseRepeat -= 10
+                #         if baseRepeat<0:
+                #             baseRepeat = 0
+                #     GBNtimer = time.time()#更新计时器
+                #     for i in range(baseRepeat,nextseqnum):
+                #         packet = cache[i]
+                #         print("Check resend packet SEQ:",bits2dict(packet)["SEQ_NUM"])
+                #         send_sock.sendto(packet,cli_addr)
+                #     congestionState = 1
+                #     ssthresh = int(cwnd)/2
+                #     cwnd = 1
+                # else:    
                     print("Update flow control value.")
                     GBNtimer = time.time()
                     # 发送空包等到接收方将更新后的rwnd返回
                     send_sock.sendto(dict2bits({}),cli_addr)
                     sendNotAck = nextseqnum - base 
-                    # if sendNotAck <= rwnd:
-                    #     receiveACK = True
-                    #     sendAvaliable = True
                     if sendNotAck <= rwnd:
                         ClientBlock = False
                         sendAvaliable = True
-                    else:
-                        ClientBlock = True
+                        receiveACK = True
             
     #关闭接受端与客户端
     send_sock.sendto(dict2bits({"FIN":b'1'}),cli_addr)

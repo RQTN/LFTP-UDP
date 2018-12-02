@@ -10,9 +10,9 @@ import threading
 SER_PORT = 10000
 SER_IP = "127.0.0.1"
 SER_ADDR = (SER_IP,SER_PORT)
-FILENAME = "test.txt"
+FILENAME = "test.mp4"
 OPERATION = "lget"
-RecvBuffer = 100
+RecvBuffer = 10
 CLI_PORT = 30000
 BUFSIZE = 1024 
 

@@ -17,8 +17,8 @@ BUFSIZE = 1024
 # 传输端口
 APP_PORT = 20000
 OPERATION = "lget"
-FILENAME = "test.txt"
-RecvBuffer = 100
+FILENAME = "test.mp4"
+RecvBuffer = 10
 
 # 服务端监听连接的套接字
 recv_sock = socket(AF_INET, SOCK_DGRAM)
