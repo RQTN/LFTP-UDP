@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
     size = send_sock.sendto(dict2bits(dict),SER_ADDR) 
     # print("Send size: ",size)
-
+    
     # 等待服务端返回可用端口
     data , address = send_sock.recvfrom(BUFSIZE)
     replyPort = json.loads(data.decode('utf-8'))['replyPort']
@@ -54,7 +54,6 @@ if __name__ == '__main__':
 
     if OPERATION == "lget":
         receiver_thread = threading.Thread(target = fileReceiver,args = (CLI_PORT,(SER_IP,replyPort),FILENAME,))
-        CLI_PORT += 2
         receiver_thread.start()
         receiver_thread.join()
     elif OPERATION == "lsend":
