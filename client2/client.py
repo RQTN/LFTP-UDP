@@ -1,3 +1,4 @@
+#coding:utf-8
 from socket import *
 from time import ctime
 import sys
@@ -9,26 +10,27 @@ import threading
 # 默认选项
 SER_PORT = 10000
 SER_IP = "127.0.0.1"
-SER_ADDR = (SER_IP,SER_PORT)
-FILENAME = "test.txt"
-OPERATION = "lget"
-RecvBuffer = 100
-CLI_PORT = 30000
+FILENAME = "test.mp4"
+OPERATION = "lsend"
+RecvBuffer = 1000
+CLI_PORT = 30001
 BUFSIZE = 1024 
 
 if __name__ == '__main__':
     if len(sys.argv)>=4:
         OPERATION = sys.argv[1]
-        SER_ADDR = sys.argv[2]
+        SER_IP = sys.argv[2]
         FILENAME = sys.argv[3]
     else:
+        print("The default parameter is "+OPERATION+" "+SER_IP+" "+FILENAME)
         print('''usage: LFTP
                       OPERATION [lsend | lget] 
-                      SER_ADDR [(server_ip_addr,server_port)]
-                      FILENAME ''')
+                      SER_ADDR 'server_ip_addr'
+                      FILENAME 'test.mp4' ''')
         # sys.exit(0)
 
-        
+    SER_ADDR = (SER_IP,SER_PORT)
+
     # 用户选项
     jsonOptions = bytes(json.dumps({'filename':FILENAME,"operation":OPERATION}),encoding="utf-8")
 
@@ -44,8 +46,9 @@ if __name__ == '__main__':
     send_sock.bind(('',CLI_PORT))
 
     size = send_sock.sendto(dict2bits(dict),SER_ADDR) 
-    # print("Send size: ",size)
-    
+    print("Send size: ",size)
+    print("Server address: ",SER_ADDR)
+
     # 等待服务端返回可用端口
     data , address = send_sock.recvfrom(BUFSIZE)
     replyPort = json.loads(data.decode('utf-8'))['replyPort']
@@ -53,7 +56,7 @@ if __name__ == '__main__':
     send_sock.close()
 
     if OPERATION == "lget":
-        receiver_thread = threading.Thread(target = fileReceiver,args = (CLI_PORT,(SER_IP,replyPort),FILENAME,))
+        receiver_thread = threading.Thread(target = fileReceiver,args = (CLI_PORT,(SER_IP,replyPort),FILENAME,RecvBuffer,))
         receiver_thread.start()
         receiver_thread.join()
     elif OPERATION == "lsend":
@@ -64,9 +67,7 @@ if __name__ == '__main__':
         recv_thread = threading.Thread(target = TransferReceiver,args = (CLI_PORT,transferQueue,))
         # 发送方发送文件内容的线程
         # 参数：发送方发送端口，接收方接收端口
-        send_thread = threading.Thread(target = TransferSender,args = (CLI_PORT+1,transferQueue,FILENAME,(address[0],address[1]),))
-
-        CLI_PORT += 2
+        send_thread = threading.Thread(target = TransferSender,args = (CLI_PORT+1,transferQueue,FILENAME,(address[0],replyPort),RecvBuffer,))
         recv_thread.start()
         send_thread.start()
         recv_thread.join()

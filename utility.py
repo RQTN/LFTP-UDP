@@ -1,3 +1,4 @@
+#coding:utf-8
 from socket import *
 from time import ctime
 import sys
@@ -86,32 +87,32 @@ def bits2dict(bitstream):
     dict["DATA"] = bitstream[96+dict["OPT_LEN"]:]
     return dict
 
-fileWriterEnd = False
+
 #磁盘每1s进行一次写操作
-FileWriteInterval = 1
-LastByteRcvd = 0
-LastByteRead = 0
-RcvBuffer = 10
+FileWriteInterval = 0.1
+def fileWriter(filename,d,timeQueue,shaVar):
 
-def fileWriter(filename,d,timeQueue):
-    global fileWriterEnd,LastByteRead
-
-    while not fileWriterEnd:
+    while not shaVar["fileWriterEnd"]:
         try:
             q = timeQueue.get(timeout = FileWriteInterval)
         except queue.Empty:
             f = open(filename,"ab+") 
             while len(d)>0:
                 packet = d.popleft()
-                LastByteRead = packet["SEQ_NUM"]
+                shaVar["LastByteRead"] = packet["SEQ_NUM"]
                 f.write(packet["DATA"])
                 # print(LastByteRead)
                 # print(packet["DATA"])
             f.close()
             print("fileWriter")
 
-def fileReceiver(port,ser_recv_addr,filename):
-    global fileWriterEnd,LastByteRead
+def fileReceiver(port,ser_recv_addr,filename,RcvBuffer):
+
+    # 初始化
+    shaVar = {}
+    shaVar["fileWriterEnd"] = False
+    shaVar["LastByteRead"] = 0
+    LastByteRcvd = 0
 
     # 接收方接收和发送端口
     recv_sock = socket(AF_INET,SOCK_DGRAM)
@@ -128,7 +129,7 @@ def fileReceiver(port,ser_recv_addr,filename):
     # 控制写入文件速度
     d = deque()
     timeQueue = queue.Queue()
-    fileThread = threading.Thread(target=fileWriter,args=(filename,d,timeQueue,))
+    fileThread = threading.Thread(target=fileWriter,args=(filename,d,timeQueue,shaVar,))
     fileThread.start()
     # fileThread.join()
 
@@ -145,7 +146,7 @@ def fileReceiver(port,ser_recv_addr,filename):
         '''
         if packet["FIN"] == b'1':#如果收到FIN包，则退出
             print("receive eof, client over.")
-            # recv_sock.sendto(dict2bits({"ACK_NUM":expectedSeqValue,"ACK":b'1',"recvWindow":RcvBuffer - (LastByteRcvd-LastByteRead)}),ser_recv_addr)
+            recv_sock.sendto(dict2bits({"FIN":b'1'}),ser_recv_addr)
             break
         elif packet["SEQ_NUM"] == expectedSeqValue:
             print("Receive packet with correct seq value:",expectedSeqValue)
@@ -155,88 +156,87 @@ def fileReceiver(port,ser_recv_addr,filename):
             # print(packet["DATA"])
             
             total_length += len(packet["DATA"])
-            print(RcvBuffer - (LastByteRcvd-LastByteRead))
-            recv_sock.sendto(dict2bits({"ACK_NUM":expectedSeqValue,"ACK":b'1',"recvWindow":RcvBuffer - (LastByteRcvd-LastByteRead)}),ser_recv_addr)
+            print(RcvBuffer - (LastByteRcvd-shaVar["LastByteRead"]))
+            recv_sock.sendto(dict2bits({"ACK_NUM":expectedSeqValue,"ACK":b'1',"recvWindow":RcvBuffer - (LastByteRcvd-shaVar["LastByteRead"])}),ser_recv_addr)
             expectedSeqValue += 1
         else:#收到了不对的包，则返回expectedSeqValue-1，表示在这之前的都收到了
             print("Expect ",expectedSeqValue," while receive",packet["SEQ_NUM"]," send ACK ",expectedSeqValue-1,"to receiver ",ser_recv_addr)
-            recv_sock.sendto(dict2bits({"ACK_NUM":expectedSeqValue-1,"ACK":b'1',"recvWindow":RcvBuffer - (LastByteRcvd-LastByteRead)}),ser_recv_addr)
+            recv_sock.sendto(dict2bits({"ACK_NUM":expectedSeqValue-1,"ACK":b'1',"recvWindow":RcvBuffer - (LastByteRcvd-shaVar["LastByteRead"])}),ser_recv_addr)
 
     #s.sendto(generateBitFromDict({"FIN":b'1'}),('127.0.0.1',9999))#关闭服务器，调试用
-    fileWriterEnd = True
+    shaVar["fileWriterEnd"]  = True
     end_time = time.time()
     total_length/=1024
     total_length/=(end_time-start_time)
     print("Transfer speed",total_length,"KB/s")
 
 
-
-# 报文数据字段最大长度
-MSS = 1
-# 发送方最大时延
-senderTimeoutValue = 0.5
-# 接收窗口大小
-rwnd = 0
-# 拥塞窗口大小
-cwnd = MSS
-# 满启动阈值
-ssthresh = 10
-# 重复ACK计数
-dupACKcount = 0
-   
-
+# 发送端接收端口
 def TransferReceiver(port,receiveQueue):
-    global rwnd
+
     receiverSocket = socket(AF_INET,SOCK_DGRAM)
     receiverSocket.bind(('',port))
     while True:
         data,addr = receiverSocket.recvfrom(1024)
-
+        # print(addr)
         packet = bits2dict(data)
         receiveQueue.put(packet)
         print("receiver receive ack:",packet["ACK_NUM"])
         # print("receiver window size:",packet["recvWindow"])
+        if packet["FIN"] == b'1':#如果收到FIN包，则退出
+            print("receive eof, client over.")
+            break
 
     receiverSocket.close()
     print("receiver close")
 
+# 发送端发送端口
 def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
     send_sock = socket(AF_INET,SOCK_DGRAM)
     send_sock.bind(('',port))
-    print(cli_addr)
+    # print(cli_addr)
 
-    # 初始化
+    ### 初始化
+    # 报文数据字段最大字节长度
+    MSS = 500
+    # 发送方最大时延
+    senderTimeoutValue = 0.5
+    # 拥塞窗口大小
+    cwnd = 1
+    # 慢启动阈值
+    ssthresh = 100
+    # 重复ACK计数
+    dupACKcount = 0
     # 最早没发送的
     nextseqnum = 1
     # 最早发送没收到的
     base = 1
-    N = 10
+    # 发送缓存
     cache = {}
+    # 已发没收到ACK的包
     sendNotAck = 0
+    # 计时器
     GBNtimer = 0
+    # 是否发完
     sendContinue = True
+    # 是否继续发送
     sendAvaliable = True
     # 是否为流控制
     ClientBlock = False
     # 1为指数增长；2为线性增长
     congestionState = 1
-    # 是否是拥塞避免
-    # congestionCtrl = False
-    global dupACKcount,cwnd,ssthresh
 
     f = open(filename,"rb")
     while sendContinue:
         # 可以发送数据
         while sendAvaliable:
-            
-            # 已发没收到ACK的包
             sendNotAck = nextseqnum - base
             # 启动计时器
             if base == nextseqnum:
                 GBNtimer = time.time()
-            print("CWND",cwnd)
+            print("CWND size",cwnd)
             # 如果大于窗口长度，cache则满   
-            if sendNotAck >=N or sendNotAck >= cwnd:
+            if sendNotAck >= cwnd:
                 sendAvaliable = False
                 # print("Up to limit ",nextseqnum - base,N)
                 # print("最大缓存：",rwnd)
@@ -263,10 +263,9 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
         receiveACK = False
         # 前一个ACK
         previousACK = 0 
-        ForceTime = 0
         while not receiveACK:
             try:
-                # 发送端接收端口收到的队列
+                # ack队列，最多等待senderTimeoutValue
                 receiveData = receiveQueue.get(timeout = senderTimeoutValue)
                 # ack序号
                 ack = receiveData["ACK_NUM"]
@@ -274,7 +273,7 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                 rwnd = receiveData["recvWindow"]
                 # print(nextseqnum,base,rwnd)
 
-                print(sendNotAck,rwnd)
+                # print(sendNotAck,rwnd)
                 # if sendNotAck <= rwnd:
                 #     ClientBlock = False
                 # else:
@@ -290,19 +289,22 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                     previousACK = ack
                     dupACKcount = 1
                     # 一次RTT完成，未发生拥塞，根据状态增加cwnd
-                    if base == nextseqnum:     
-                        sendAvaliable =True
-                        # 脱离超时循环
+                    if base == nextseqnum:      
+                        # 所有上一轮ack确认收到
                         receiveACK = True
-                        # 乘性增长
-                        if congestionState == 1:
-                            cwnd *= 2
-                        else:
-                            cwnd += MSS
-                        # 到达阈值线性增长
-                        if cwnd >= ssthresh and congestionState == 1:
-                            cwnd == ssthresh
-                            congestionState = 2
+                        # 继续下一轮发送
+                        sendAvaliable =True
+                        if not ClientBlock:
+                            # 乘性增长
+                            if congestionState == 1:
+                                cwnd *= 2
+                            else:
+                                cwnd += 1
+                            # 到达阈值线性增长
+                            if cwnd >= ssthresh and congestionState == 1:
+                                cwnd == ssthresh
+                                congestionState = 2
+                        ClientBlock = False
                         break
                         
                 # 收到重复ACK
@@ -311,7 +313,7 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                     # 进入快速恢复状态
                     if dupACKcount >= 3:
                         ssthresh = int(cwnd/2)
-                        cwnd = ssthresh + 3*MSS
+                        cwnd = ssthresh + 3
                         dupACKcount = 0
                         congestionState = 2
                         print("Three times duplicated ACK",previousACK," ,resend now!")

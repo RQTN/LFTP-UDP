@@ -1,3 +1,4 @@
+#coding:utf-8
 from socket import *
 from time import ctime
 import sys
@@ -18,7 +19,6 @@ BUFSIZE = 1024
 APP_PORT = 20000
 OPERATION = "lget"
 FILENAME = "test.mp4"
-RecvBuffer = 10
 
 # 服务端监听连接的套接字
 recv_sock = socket(AF_INET, SOCK_DGRAM)
@@ -32,7 +32,7 @@ while serverListend:
     data , address = recv_sock.recvfrom(BUFSIZE)
     packet = bits2dict(data)
     print("CLIENT address",address)
-    print("SYN ",packet["SYN"])
+    # print("SYN ",packet["SYN"])
 
     if packet["SYN"] == b'1':
         # serverConnected = True
@@ -45,7 +45,7 @@ while serverListend:
         # 请求操作
         OPERATION = jsonOptions["operation"]
         RecvBuffer = packet["recvWindow"]
-        print("CLIENT REQUEST:FILENAME,OPERATION,RecvBuffer:\n",FILENAME,OPERATION,RecvBuffer)
+        print("CLIENT REQUEST:filename,operation,RecvBuffer:\n",FILENAME,OPERATION,RecvBuffer)
 
         # 返回新的可用端口，对于下载请求，即为服务端作为发送方接收的端口，对于上传，即为服务端作为接收方接收和发送的端口
         replyPort = bytes(json.dumps({"replyPort":APP_PORT}),encoding = 'utf-8')
@@ -66,11 +66,11 @@ while serverListend:
             recv_thread.start()
             send_thread.start()
             # recv_thread.join()
-            # recv_thread.join()
-        elif OPERATION == "upload":
-            receiver_thread = threading.Thread(target = fileReceiver,args = (APP_PORT,(address[0],address[1]),FILENAME,))
+            # send_thread.join()
+        elif OPERATION == "lsend":
+            receiver_thread = threading.Thread(target = fileReceiver,args = (APP_PORT,(address[0],address[1]),FILENAME,RecvBuffer,))
             APP_PORT += 1
             receiver_thread.start()
             # receiver_thread.join()
-
+            
 recv_sock.close()
