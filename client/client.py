@@ -67,7 +67,7 @@ if __name__ == '__main__':
         recv_thread = threading.Thread(target = TransferReceiver,args = (CLI_PORT,transferQueue,))
         # 发送方发送文件内容的线程
         # 参数：发送方发送端口，接收方接收端口
-        send_thread = threading.Thread(target = TransferSender,args = (CLI_PORT+1,transferQueue,FILENAME,(address[0],address[1]),))
+        send_thread = threading.Thread(target = TransferSender,args = (CLI_PORT+1,transferQueue,FILENAME,(address[0],replyPort),RecvBuffer,))
         recv_thread.start()
         send_thread.start()
         recv_thread.join()

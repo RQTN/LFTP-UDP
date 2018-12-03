@@ -13,7 +13,7 @@ SER_IP = "127.0.0.1"
 FILENAME = "test.mp4"
 OPERATION = "lsend"
 RecvBuffer = 1000
-CLI_PORT = 30001
+CLI_PORT = 30002
 BUFSIZE = 1024 
 
 if __name__ == '__main__':

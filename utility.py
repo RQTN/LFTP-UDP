@@ -89,7 +89,7 @@ def bits2dict(bitstream):
 
 
 #磁盘每1s进行一次写操作
-FileWriteInterval = 0.1
+FileWriteInterval = 1
 def fileWriter(filename,d,timeQueue,shaVar):
 
     while not shaVar["fileWriterEnd"]:
