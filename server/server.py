@@ -19,6 +19,7 @@ BUFSIZE = 1024
 APP_PORT = 20000
 OPERATION = "lget"
 FILENAME = "test.mp4"
+RcvBuffer = 1000
 
 # 服务端监听连接的套接字
 recv_sock = socket(AF_INET, SOCK_DGRAM)
@@ -68,7 +69,7 @@ while serverListend:
             # recv_thread.join()
             # send_thread.join()
         elif OPERATION == "lsend":
-            receiver_thread = threading.Thread(target = fileReceiver,args = (APP_PORT,(address[0],address[1]),FILENAME,RecvBuffer,))
+            receiver_thread = threading.Thread(target = fileReceiver,args = (APP_PORT,(address[0],address[1]),FILENAME,RcvBuffer,))
             APP_PORT += 1
             receiver_thread.start()
             # receiver_thread.join()
