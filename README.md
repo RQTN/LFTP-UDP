@@ -739,5 +739,21 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
 
 ## 测试结果
 
-
+* Client send file to Server：`lsend`
+* Client get file from Server：`lget` 
+* Multiple Users：
+    * two Client `lget`
+    * two Client `lsend`
+    * one Client `lget` and the other one Client `lsend`
+* Reliability：即使丢包但仍然成功接收文件（可能还需要添加代码）
+* flow control：rwnd 变化且空包
+* congestion control：
+    * cwnd 慢启动（指数增长）
+        * 最开始
+        * 超时后（cwnd == 1）
+    * cwnd 加性增
+    * 快速恢复（dupACK） ->  cwnd 乘性减（降为原来的一半）
+* 本地测试
+* 局域网测试
+* 公网测试
 
