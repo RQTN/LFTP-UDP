@@ -361,8 +361,10 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
             # 收不到ack，抛出异常
             except queue.Empty:                  
                 currentTime = time.time()
-
-                if currentTime - GBNtimer > senderTimeoutValue and base != nextseqnum:
+                if currentTime - GBNtimer <= senderTimeoutValue:
+                    continue
+                
+                if base != nextseqnum:
                     # print("Time out and output current sequence number",base)
                     print("超时,当前base为: ",base)
 
