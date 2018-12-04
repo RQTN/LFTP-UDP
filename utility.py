@@ -285,7 +285,7 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                 # 发送缓存(base,base+N),用于重传 
                 cache[nextseqnum] = dict2bits({"SEQ_NUM":nextseqnum,"DATA":data})
                 send_sock.sendto(cache[nextseqnum],cli_addr)
-                print("send packet:", nextseqnum)
+                print("发送包:", nextseqnum)
                 nextseqnum += 1
        
 
@@ -308,9 +308,9 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                 #     ClientBlock = True
                 
                 # 按顺序收到ACK
-                if ack == base:
+                if ack >= base:
                     # 更新base
-                    base = ack+1
+                    base = ack + 1
                     # 更新计时器
                     GBNtimer = time.time()
                     # 更新已发未收到ACK的包的数量
@@ -389,7 +389,7 @@ def TransferSender(port,receiveQueue,filename,cli_addr,rwnd):
                     GBNtimer = time.time()
                     # 发送空包等到接收方将更新后的rwnd返回
                     send_sock.sendto(dict2bits({}),cli_addr)
-                    print("send packet:", 0)
+                    print("发送空包:", 0)
                     sendNotAck = nextseqnum - base 
                     if sendNotAck <= rwnd:
                         sendAvaliable = True
