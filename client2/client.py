@@ -22,7 +22,7 @@ if __name__ == '__main__':
         SER_IP = sys.argv[2]
         FILENAME = sys.argv[3]
     else:
-        print("The default parameter is "+OPERATION+" "+SER_IP+" "+FILENAME)
+        print("默认参数为  "+OPERATION+" "+SER_IP+" "+FILENAME)
         print('''usage: LFTP
                       OPERATION [lsend | lget] 
                       SER_ADDR 'server_ip_addr'
@@ -46,13 +46,14 @@ if __name__ == '__main__':
     send_sock.bind(('',CLI_PORT))
 
     size = send_sock.sendto(dict2bits(dict),SER_ADDR) 
-    print("Send size: ",size)
-    print("Server address: ",SER_ADDR)
+    print("发送大小: ",size)
+    print("服务器地址: ",SER_ADDR)
 
     # 等待服务端返回可用端口
     data , address = send_sock.recvfrom(BUFSIZE)
     replyPort = json.loads(data.decode('utf-8'))['replyPort']
-    print("The server reply the port avalible at :",replyPort)
+    # print("The server reply the port avalible at :",replyPort)
+    print("服务端返回的可用端口为: ",replyPort)
     send_sock.close()
 
     if OPERATION == "lget":
